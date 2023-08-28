@@ -2,74 +2,96 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"strings"
+
+	"gopkg.in/yaml.v2"
+)
+
+type Links struct {
+	Url  string `yaml:"url"`
+	Name string `yaml:"name"`
+}
+
+const (
+	configFile     = "config.yaml"
+	rofiPrompt     = "Select Bookmark:"
+	rofiExecutable = "rofi"
+	browserCmd     = "xdg-open"
 )
 
 func main() {
-	// List of bookmarks
-	type Links struct {
-		url  string
-		name string
-	}
-	urls := []Links{
-		{
-			"https://www.example.com",
-			"example",
-		},
-		{
-			"https://www.github.com",
-			"github",
-		},
-
-		// "https://www.google.com",
-		// "https://www.github.com",
-		// "https://console.cloud.google.com/artifacts?referrer=search&authuser=2&project=infrastructure-20220921-363208",
-		// // Add more bookmarks here
+	urlInfo, err := parseYaml("config.yaml")
+	if err != nil {
+		log.Fatalf("Error parsing YAML: %v", err)
 	}
 
-	// Create the rofi options
+	selectedBookmark, err := runRofiAndGetSelection(urlInfo)
+	if err != nil {
+		log.Fatalf("Error running Rofi: %v", err)
+	}
+
+	linkIndex, err := findStringPosition(urlInfo, selectedBookmark)
+	if err != nil {
+		log.Fatalf("Error finding link: %v", err)
+	}
+
+	if err := launchBrowser(urlInfo[linkIndex].Url); err != nil {
+		log.Fatalf("Error launching browser: %v", err)
+	}
+}
+
+func (l Links) findStringPosition(target string) bool {
+	return l.Name == target
+}
+
+func findStringPosition(urlInfo []Links, target string) (int, error) {
+	for i, link := range urlInfo {
+		if link.findStringPosition(target) {
+			return i, nil
+		}
+	}
+	return -1, fmt.Errorf("link not found") // Return -1 if the target string is not found
+}
+
+func parseYaml(file string) ([]Links, error) {
+	var urlInfo []Links
+	yamlFile, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	if err = yaml.Unmarshal(yamlFile, &urlInfo); err != nil {
+		return nil, err
+	}
+	return urlInfo, nil
+}
+
+func runRofiAndGetSelection(urlInfo []Links) (string, error) {
+	var links []string
+	for _, link := range urlInfo {
+		links = append(links, link.Name)
+	}
 	rofiOptions := []string{
 		"-dmenu",
 		"-p", "Select Bookmark:",
 	}
-	var links []string
-	// Command to run rofi
 	rofiCmd := exec.Command("rofi", rofiOptions...)
-	for _, link := range urls {
-		links = append(links, link.name)
-	}
 	rofiCmd.Stdin = strings.NewReader(strings.Join(links, "\n"))
 	rofiOutput, err := rofiCmd.Output()
 	if err != nil {
 		fmt.Println("Error:", err)
-		return
+		return "", err
 	}
-	// Run rofi and get the selected bookmark
+	return strings.TrimSpace(string(rofiOutput)), nil
+}
 
-	selectedBookmark := strings.TrimSpace(string(rofiOutput))
-
-	linkpos := findStringPosition(links, selectedBookmark)
-	// Launch the browser with the selected bookmark
-	browserurl := urls[linkpos]
-	browserCmd := exec.Command("xdg-open", browserurl.url)
+func launchBrowser(url string) error {
+	browserCmd := exec.Command(browserCmd, url)
 	browserCmd.Stdin = os.Stdin
 	browserCmd.Stdout = os.Stdout
 	browserCmd.Stderr = os.Stderr
 
-	// Run the browser command
-	err = browserCmd.Run()
-	if err != nil {
-		fmt.Println("Error:", err)
-	}
-}
-
-func findStringPosition(arr []string, target string) int {
-	for i, s := range arr {
-		if s == target {
-			return i
-		}
-	}
-	return -1 // Return -1 if the target string is not found
+	return browserCmd.Run()
 }
