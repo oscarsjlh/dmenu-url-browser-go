@@ -23,7 +23,13 @@ const (
 )
 
 func main() {
-	urlInfo, err := parseYaml("config.yaml")
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return
+	}
+
+	cFile := home + "/.config/browser/" + configFile
+	urlInfo, err := parseYaml(cFile)
 	if err != nil {
 		log.Fatalf("Error parsing YAML: %v", err)
 	}
